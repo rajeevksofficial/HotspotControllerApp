@@ -1,0 +1,28 @@
+<resources>
+    <string name="app_name">Hotspot Controller</string>
+    <string name="tab_dashboard">Dashboard</string>
+    <string name="tab_devices">Devices (D1–D10)</string>
+    <string name="tab_url_blocker">URL Blocker</string>
+    <string name="tab_guide">Setup Guide</string>
+    
+    <string name="service_active">HOTSPOT GATEWAY ACTIVE</string>
+    <string name="service_inactive">HOTSPOT GATEWAY STOPPED</string>
+    <string name="start_service">Start Controller Gateway</string>
+    <string name="stop_service">Stop Controller Gateway</string>
+    
+    <string name="hotspot_ip_label">Hotspot Gateway IP</string>
+    <string name="proxy_port_label">Proxy Port</string>
+    <string name="device_limit_label">Connected Devices</string>
+    
+    <string name="speed_control_title">Global Internet Speed Limit</string>
+    <string name="speed_unlimited">Unlimited</string>
+    <string name="speed_256k">256 Kbps</string>
+    <string name="speed_512k">512 Kbps</string>
+    <string name="speed_1m">1 Mbps</string>
+    <string name="speed_2m">2 Mbps</string>
+    <string name="speed_5m">5 Mbps</string>
+    
+    <string name="blocked_urls_title">Restricted URLs &amp; Domains</string>
+    <string name="add_rule_hint">e.g. tiktok.com, *.facebook.com, badsite.com</string>
+    <string name="add_rule_btn">Block Domain</string>
+</resources>
