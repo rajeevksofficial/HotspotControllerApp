@@ -98,7 +98,7 @@ class DnsSinkholeServer(
                 isBlocked = true,
                 isPaused = true,
                 ruleMatched = "Device Paused",
-                deviceName = device.getDisplayName(0)
+                deviceName = deviceManager.getDeviceDisplayName(clientIp)
             )
             sendBlockedResponse(clientIp, clientPort, queryData)
             return
@@ -112,7 +112,7 @@ class DnsSinkholeServer(
             isBlocked = isBlocked,
             isPaused = false,
             ruleMatched = ruleMatched,
-            deviceName = device.getDisplayName(0)
+            deviceName = deviceManager.getDeviceDisplayName(clientIp)
         )
 
         if (isBlocked) {

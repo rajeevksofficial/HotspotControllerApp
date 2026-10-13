@@ -35,6 +35,7 @@ class MainActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private var uiUpdateRunnable: Runnable? = null
     private var isRootModeActive = false
+    private var lastTopLogTimestamp = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,6 +50,16 @@ class MainActivity : AppCompatActivity() {
         setupLiveRequestsView()
         setupSetupGuideView()
         startPeriodicUiRefresh()
+
+        // Auto-start Hotspot Gateway Service on launch so live request & traffic capture works immediately
+        if (!HotspotProxyService.isRunning) {
+            try {
+                val intent = Intent(this, HotspotProxyService::class.java).apply {
+                    action = HotspotProxyService.ACTION_START
+                }
+                ContextCompat.startForegroundService(this, intent)
+            } catch (_: Exception) {}
+        }
 
         // Trigger initial scan on startup
         performSubnetScan(silent = true)
@@ -399,8 +410,16 @@ class MainActivity : AppCompatActivity() {
     private fun startPeriodicUiRefresh() {
         uiUpdateRunnable = object : Runnable {
             override fun run() {
+                if (!HotspotProxyService.isRunning) {
+                    Thread {
+                        try {
+                            HotspotControllerApp.instance.deviceManager.updateLiveSpeeds()
+                        } catch (_: Exception) {}
+                    }.start()
+                }
                 updateDashboardStats()
                 refreshDevicesList()
+                refreshLiveRequests()
                 handler.postDelayed(this, 1000)
             }
         }
@@ -538,8 +557,12 @@ class MainActivity : AppCompatActivity() {
 
         liveRequestAdapter.submitList(logs)
 
-        if (binding.viewLiveRequests.switchAutoScroll.isChecked && logs.isNotEmpty()) {
-            binding.viewLiveRequests.rvLiveRequests.scrollToPosition(0)
+        val currentTopTime = logs.firstOrNull()?.timestamp ?: 0L
+        if (currentTopTime != lastTopLogTimestamp) {
+            lastTopLogTimestamp = currentTopTime
+            if (binding.viewLiveRequests.switchAutoScroll.isChecked && logs.isNotEmpty()) {
+                binding.viewLiveRequests.rvLiveRequests.scrollToPosition(0)
+            }
         }
     }
 

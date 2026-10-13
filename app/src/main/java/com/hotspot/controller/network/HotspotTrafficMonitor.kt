@@ -1,7 +1,6 @@
 package com.hotspot.controller.network
 
 import android.net.TrafficStats
-import android.util.Log
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileReader
@@ -12,8 +11,6 @@ data class InterfaceStats(
 )
 
 object HotspotTrafficMonitor {
-    private const val TAG = "HotspotTrafficMonitor"
-
     private var lastRxBytes: Long = 0L
     private var lastTxBytes: Long = 0L
     private var lastCheckTimeMs: Long = System.currentTimeMillis()
@@ -21,6 +18,10 @@ object HotspotTrafficMonitor {
     @Volatile var liveDownSpeedKbps: Double = 0.0
         private set
     @Volatile var liveUpSpeedKbps: Double = 0.0
+        private set
+    @Volatile var lastDiffDownBytes: Long = 0L
+        private set
+    @Volatile var lastDiffUpBytes: Long = 0L
         private set
     @Volatile var totalDownBytes: Long = 0L
         private set
@@ -30,11 +31,16 @@ object HotspotTrafficMonitor {
     /**
      * Reads real-time hardware transfer stats from /proc/net/dev or /sys/class/net/.
      * Calculates live download & upload speed (Kbps) across the hotspot interface.
+     * Returns true if a new measurement tick occurred.
      */
-    fun updateLiveInterfaceSpeed() {
+    @Synchronized
+    fun updateLiveInterfaceSpeed(): Boolean {
         val now = System.currentTimeMillis()
         val elapsedMs = now - lastCheckTimeMs
-        if (elapsedMs < 800) return // Measure at roughly ~1 second intervals
+        if (elapsedMs < 750) return false
+
+        lastDiffDownBytes = 0L
+        lastDiffUpBytes = 0L
 
         val stats = readHotspotInterfaceBytes()
         if (stats != null) {
@@ -44,6 +50,9 @@ object HotspotTrafficMonitor {
                 // rxBytes = Data received by D0 from client devices (Client UPLOAD)
                 val diffTx = (stats.txBytes - lastTxBytes).coerceAtLeast(0)
                 val diffRx = (stats.rxBytes - lastRxBytes).coerceAtLeast(0)
+
+                lastDiffDownBytes = diffTx
+                lastDiffUpBytes = diffRx
 
                 liveDownSpeedKbps = (diffTx * 8.0) / elapsedMs
                 liveUpSpeedKbps = (diffRx * 8.0) / elapsedMs
@@ -55,9 +64,9 @@ object HotspotTrafficMonitor {
             lastTxBytes = stats.txBytes
             lastRxBytes = stats.rxBytes
             lastCheckTimeMs = now
+            return true
         } else {
-            // Fallback: global mobile/wifi delta if specific interface not found
-            updateFallbackStats(now, elapsedMs)
+            return updateFallbackStats(now, elapsedMs)
         }
     }
 
@@ -65,15 +74,20 @@ object HotspotTrafficMonitor {
         val hotspotIface = HotspotNetworkHelper.getHotspotInterfaceName() ?: "ap0"
 
         // 1. Try reading /sys/class/net/<iface>/statistics/
-        try {
-            val rxFile = File("/sys/class/net/$hotspotIface/statistics/rx_bytes")
-            val txFile = File("/sys/class/net/$hotspotIface/statistics/tx_bytes")
-            if (rxFile.exists() && txFile.exists()) {
-                val rx = rxFile.readText().trim().toLongOrNull() ?: 0L
-                val tx = txFile.readText().trim().toLongOrNull() ?: 0L
-                return InterfaceStats(rxBytes = rx, txBytes = tx)
-            }
-        } catch (_: Exception) {}
+        val candidateIfaces = listOf(hotspotIface, "ap0", "wlan1", "softap0", "swlan0", "wlan2")
+        for (iface in candidateIfaces) {
+            try {
+                val rxFile = File("/sys/class/net/$iface/statistics/rx_bytes")
+                val txFile = File("/sys/class/net/$iface/statistics/tx_bytes")
+                if (rxFile.exists() && txFile.exists()) {
+                    val rx = rxFile.readText().trim().toLongOrNull() ?: 0L
+                    val tx = txFile.readText().trim().toLongOrNull() ?: 0L
+                    if (rx > 0 || tx > 0) {
+                        return InterfaceStats(rxBytes = rx, txBytes = tx)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
 
         // 2. Try parsing /proc/net/dev
         try {
@@ -83,12 +97,14 @@ object HotspotTrafficMonitor {
                     var line: String?
                     while (reader.readLine().also { line = it } != null) {
                         val text = line?.trim() ?: continue
-                        if (text.startsWith(hotspotIface) || text.startsWith("ap") || text.startsWith("wlan1") || text.startsWith("softap")) {
+                        if (text.startsWith(hotspotIface) || text.startsWith("ap") || text.startsWith("wlan1") || text.startsWith("softap") || text.startsWith("swlan")) {
                             val tokens = text.substringAfter(":").trim().split(Regex("\\s+"))
                             if (tokens.size >= 9) {
                                 val rx = tokens[0].toLongOrNull() ?: 0L
                                 val tx = tokens[8].toLongOrNull() ?: 0L
-                                return InterfaceStats(rxBytes = rx, txBytes = tx)
+                                if (rx > 0 || tx > 0) {
+                                    return InterfaceStats(rxBytes = rx, txBytes = tx)
+                                }
                             }
                         }
                     }
@@ -99,7 +115,7 @@ object HotspotTrafficMonitor {
         return null
     }
 
-    private fun updateFallbackStats(now: Long, elapsedMs: Long) {
+    private fun updateFallbackStats(now: Long, elapsedMs: Long): Boolean {
         val totalRx = TrafficStats.getTotalRxBytes()
         val totalTx = TrafficStats.getTotalTxBytes()
 
@@ -107,6 +123,9 @@ object HotspotTrafficMonitor {
             if (lastRxBytes > 0 && lastTxBytes > 0 && elapsedMs > 0) {
                 val diffRx = (totalRx - lastRxBytes).coerceAtLeast(0)
                 val diffTx = (totalTx - lastTxBytes).coerceAtLeast(0)
+
+                lastDiffDownBytes = diffRx
+                lastDiffUpBytes = diffTx
 
                 // In tethering mode, incoming cellular rx is forwarded as tx to hotspot
                 liveDownSpeedKbps = (diffRx * 8.0) / elapsedMs
@@ -118,6 +137,8 @@ object HotspotTrafficMonitor {
             lastRxBytes = totalRx
             lastTxBytes = totalTx
             lastCheckTimeMs = now
+            return true
         }
+        return false
     }
 }

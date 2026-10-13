@@ -182,7 +182,7 @@ class Socks5ProxyServer(
                 isBlocked = isBlocked,
                 isPaused = isDevPaused,
                 ruleMatched = if (isDevPaused) "Device Paused" else ruleMatched,
-                deviceName = dev.getDisplayName(0)
+                deviceName = deviceManager.getDeviceDisplayName(clientIp)
             )
 
             if (isBlocked || deviceManager.isDeviceBlocked(clientIp)) {

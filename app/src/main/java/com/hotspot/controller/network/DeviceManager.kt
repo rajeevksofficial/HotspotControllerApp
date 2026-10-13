@@ -440,11 +440,14 @@ class DeviceManager(context: Context) {
     }
 
     fun updateLiveSpeeds() {
-        HotspotTrafficMonitor.updateLiveInterfaceSpeed()
+        val sampled = HotspotTrafficMonitor.updateLiveInterfaceSpeed()
         val ifaceDown = HotspotTrafficMonitor.liveDownSpeedKbps
         val ifaceUp = HotspotTrafficMonitor.liveUpSpeedKbps
+        val diffDownBytes = if (sampled) HotspotTrafficMonitor.lastDiffDownBytes else 0L
+        val diffUpBytes = if (sampled) HotspotTrafficMonitor.lastDiffUpBytes else 0L
 
         val onlineDevices = devicesMap.values.filter { it.isOnline }
+        val nonProxyOnlineCount = onlineDevices.count { !it.isProxyRouted }.coerceAtLeast(1)
 
         for ((ip, dev) in devicesMap) {
             val downThrottler = downThrottlersMap[ip]
@@ -458,21 +461,45 @@ class DeviceManager(context: Context) {
             } else if (dev.isProxyRouted && ((downThrottler?.currentSpeedKbps ?: 0.0) > 0 || (upThrottler?.currentSpeedKbps ?: 0.0) > 0)) {
                 dev.currentDownSpeedKbps = downThrottler?.currentSpeedKbps ?: 0.0
                 dev.currentUpSpeedKbps = upThrottler?.currentSpeedKbps ?: 0.0
-            } else if (onlineDevices.size == 1 && ifaceDown > 0) {
+            } else if (onlineDevices.size == 1 && (ifaceDown > 0 || ifaceUp > 0)) {
                 // Only 1 device online on hotspot: all hotspot traffic belongs to it
                 dev.currentDownSpeedKbps = ifaceDown
                 dev.currentUpSpeedKbps = ifaceUp
-            } else if (onlineDevices.isNotEmpty() && ifaceDown > 0) {
+                if (!dev.isProxyRouted && (diffDownBytes > 0 || diffUpBytes > 0)) {
+                    dev.totalBytesDownloaded += diffDownBytes
+                    dev.totalBytesUploaded += diffUpBytes
+                }
+            } else if (onlineDevices.isNotEmpty() && (ifaceDown > 0 || ifaceUp > 0)) {
                 // Distribute across active online devices
                 dev.currentDownSpeedKbps = ifaceDown / onlineDevices.size
                 dev.currentUpSpeedKbps = ifaceUp / onlineDevices.size
+                if (!dev.isProxyRouted && (diffDownBytes > 0 || diffUpBytes > 0)) {
+                    dev.totalBytesDownloaded += (diffDownBytes / nonProxyOnlineCount)
+                    dev.totalBytesUploaded += (diffUpBytes / nonProxyOnlineCount)
+                }
             } else {
                 dev.currentDownSpeedKbps = 0.0
                 dev.currentUpSpeedKbps = 0.0
             }
         }
         globalThrottler.checkIdleDecay()
+
+        // Capture live connections and active hotspot traffic into Live Requests stream
+        try {
+            LiveConnectionMonitor.pollLiveConnections(this, HotspotControllerApp.instance.accessLogManager)
+        } catch (_: Exception) {}
+
         notifyListeners()
+    }
+
+    fun getDeviceDisplayName(clientIp: String): String {
+        val sorted = getAllDevices()
+        val idx = sorted.indexOfFirst { it.ipAddress == clientIp }
+        return if (idx >= 0) {
+            sorted[idx].getDisplayName(idx)
+        } else {
+            devicesMap[clientIp]?.getDisplayName(0) ?: "D1"
+        }
     }
 
     fun getAllDevices(): List<ConnectedDevice> {

@@ -134,7 +134,7 @@ class HttpProxyServer(
                     isBlocked = true,
                     isPaused = true,
                     ruleMatched = "Device Paused",
-                    deviceName = dev.getDisplayName(0)
+                    deviceName = deviceManager.getDeviceDisplayName(clientIp)
                 )
                 if (method == "CONNECT") {
                     val response = "HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nInternet access has been paused for this device by D0 hotspot administrator.\r\n"
@@ -216,7 +216,7 @@ class HttpProxyServer(
             isBlocked = isBlocked,
             isPaused = isDevPaused,
             ruleMatched = if (isDevPaused) "Device Paused" else ruleMatched,
-            deviceName = dev.getDisplayName(0)
+            deviceName = deviceManager.getDeviceDisplayName(clientIp)
         )
 
         if (isBlocked || deviceManager.isDeviceBlocked(clientIp)) {
@@ -375,7 +375,7 @@ class HttpProxyServer(
             isBlocked = isBlocked,
             isPaused = isDevPaused,
             ruleMatched = if (isDevPaused) "Device Paused" else ruleMatched,
-            deviceName = dev.getDisplayName(0)
+            deviceName = deviceManager.getDeviceDisplayName(clientIp)
         )
 
         if (isBlocked || deviceManager.isDeviceBlocked(clientIp)) {
@@ -514,7 +514,7 @@ class HttpProxyServer(
                     <div class="row"><span class="label">Your Device IP:</span><span class="val">$clientIp</span></div>
                     <div class="row"><span class="label">Host (D0) IP:</span><span class="val">$hostIp</span></div>
                     <div class="row"><span class="label">Your Speed Limit:</span><span class="val">$speedLabel</span></div>
-                    <div class="row"><span class="label">Device Name:</span><span class="val">${dev.getDisplayName(0)}</span></div>
+                    <div class="row"><span class="label">Device Name:</span><span class="val">${deviceManager.getDeviceDisplayName(clientIp)}</span></div>
                     <div class="row"><span class="label">Device Type:</span><span class="val">${dev.getCategoryLabel()}</span></div>
                     <div class="row"><span class="label">Status:</span><span class="val">${if (dev.isBlocked) "Paused" else "Active"}</span></div>
                     <p style="color:#94a3b8; font-size:12px; margin-top:20px;">Your internet traffic is safely routed and managed through Host D0.</p>

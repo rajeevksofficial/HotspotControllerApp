@@ -1,18 +1,21 @@
 package com.hotspot.controller.network
 
 import com.hotspot.controller.model.AccessLogEntry
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedDeque
+import java.util.concurrent.CopyOnWriteArrayList
 
 class AccessLogManager {
     private val maxLogs = 500
     private val logs = ConcurrentLinkedDeque<AccessLogEntry>()
-    private val listeners = mutableListOf<() -> Unit>()
+    private val listeners = CopyOnWriteArrayList<() -> Unit>()
+    private val lastClientLogTimestamp = ConcurrentHashMap<String, Long>()
 
-    var totalBlockedCount: Int = 0
+    @Volatile var totalBlockedCount: Int = 0
         private set
-    var totalAllowedCount: Int = 0
+    @Volatile var totalAllowedCount: Int = 0
         private set
-    var totalPausedCount: Int = 0
+    @Volatile var totalPausedCount: Int = 0
         private set
 
     fun log(
@@ -24,7 +27,11 @@ class AccessLogManager {
         ruleMatched: String? = null,
         deviceName: String = ""
     ) {
+        val now = System.currentTimeMillis()
+        lastClientLogTimestamp[clientIp] = now
+
         val entry = AccessLogEntry(
+            timestamp = now,
             clientIp = clientIp,
             deviceName = deviceName,
             targetHost = targetHost,
@@ -48,12 +55,17 @@ class AccessLogManager {
         notifyListeners()
     }
 
+    fun getLastLogTimeForClient(clientIp: String): Long {
+        return lastClientLogTimestamp[clientIp] ?: 0L
+    }
+
     fun getLogs(): List<AccessLogEntry> {
         return logs.toList()
     }
 
     fun clear() {
         logs.clear()
+        lastClientLogTimestamp.clear()
         totalBlockedCount = 0
         totalAllowedCount = 0
         totalPausedCount = 0
@@ -65,6 +77,10 @@ class AccessLogManager {
     }
 
     private fun notifyListeners() {
-        listeners.forEach { it.invoke() }
+        for (listener in listeners) {
+            try {
+                listener.invoke()
+            } catch (_: Exception) {}
+        }
     }
 }
