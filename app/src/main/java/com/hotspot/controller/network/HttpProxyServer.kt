@@ -209,9 +209,11 @@ class HttpProxyServer(
         val isDevPaused = deviceManager.isDeviceBlocked(clientIp)
         val (isRuleBlocked, ruleMatched) = urlRuleManager.isHostBlocked(host)
         val isBlocked = isRuleBlocked || isDevPaused
+        val fullHttpsUrl = "https://$host/"
+        LiveConnectionMonitor.recordActiveUrl(clientIp, fullHttpsUrl, "HTTPS")
         accessLogManager.log(
             clientIp = clientIp,
-            targetHost = host,
+            targetHost = fullHttpsUrl,
             protocol = "HTTPS",
             isBlocked = isBlocked,
             isPaused = isDevPaused,
@@ -259,6 +261,7 @@ class HttpProxyServer(
                     isBlockedProvider = { deviceManager.isDeviceBlocked(clientIp) },
                     onBytesTransferred = { bytes ->
                         deviceManager.recordTraffic(clientIp, downBytes = 0, upBytes = bytes)
+                        LiveConnectionMonitor.recordActiveUrl(clientIp, fullHttpsUrl, "HTTPS")
                     }
                 )
                 try { targetSocket.close() } catch (_: Exception) {}
@@ -274,6 +277,7 @@ class HttpProxyServer(
                     isBlockedProvider = { deviceManager.isDeviceBlocked(clientIp) },
                     onBytesTransferred = { bytes ->
                         deviceManager.recordTraffic(clientIp, downBytes = bytes, upBytes = 0)
+                        LiveConnectionMonitor.recordActiveUrl(clientIp, fullHttpsUrl, "HTTPS")
                     }
                 )
                 try { clientSocket.close() } catch (_: Exception) {}
@@ -368,9 +372,12 @@ class HttpProxyServer(
         val isDevPaused = deviceManager.isDeviceBlocked(clientIp)
         val (isRuleBlocked, ruleMatched) = urlRuleManager.isHostBlocked(host)
         val isBlocked = isRuleBlocked || isDevPaused
+        val cleanPath = if (path.startsWith("/")) path else "/$path"
+        val fullHttpUrl = "http://$host$cleanPath"
+        LiveConnectionMonitor.recordActiveUrl(clientIp, fullHttpUrl, "HTTP")
         accessLogManager.log(
             clientIp = clientIp,
-            targetHost = host,
+            targetHost = fullHttpUrl,
             protocol = "HTTP",
             isBlocked = isBlocked,
             isPaused = isDevPaused,
@@ -413,6 +420,7 @@ class HttpProxyServer(
                 isBlockedProvider = { deviceManager.isDeviceBlocked(clientIp) },
                 onBytesTransferred = { bytes ->
                     deviceManager.recordTraffic(clientIp, downBytes = bytes, upBytes = 0)
+                    LiveConnectionMonitor.recordActiveUrl(clientIp, fullHttpUrl, "HTTP")
                 }
             )
         } catch (e: Exception) {

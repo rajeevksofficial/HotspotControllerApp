@@ -90,10 +90,13 @@ class DnsSinkholeServer(
             deviceManager.updateDeviceOs(clientIp, inferredOs)
         }
 
+        val fullDnsUrl = "https://$domain/"
+        LiveConnectionMonitor.recordDnsResolution(clientIp, domain)
+
         if (device.isBlocked) {
             accessLogManager.log(
                 clientIp = clientIp,
-                targetHost = domain,
+                targetHost = fullDnsUrl,
                 protocol = "DNS",
                 isBlocked = true,
                 isPaused = true,
@@ -107,7 +110,7 @@ class DnsSinkholeServer(
         val (isBlocked, ruleMatched) = urlRuleManager.isHostBlocked(domain)
         accessLogManager.log(
             clientIp = clientIp,
-            targetHost = domain,
+            targetHost = fullDnsUrl,
             protocol = "DNS",
             isBlocked = isBlocked,
             isPaused = false,

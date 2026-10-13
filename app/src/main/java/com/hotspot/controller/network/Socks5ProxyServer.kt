@@ -175,17 +175,19 @@ class Socks5ProxyServer(
             val isDevPaused = deviceManager.isDeviceBlocked(clientIp)
             val (isRuleBlocked, ruleMatched) = urlRuleManager.isHostBlocked(targetHost)
             val isBlocked = isRuleBlocked || isDevPaused
-            accessLogManager.log(
-                clientIp = clientIp,
-                targetHost = targetHost,
-                protocol = "SOCKS5",
-                isBlocked = isBlocked,
-                isPaused = isDevPaused,
-                ruleMatched = if (isDevPaused) "Device Paused" else ruleMatched,
-                deviceName = deviceManager.getDeviceDisplayName(clientIp)
-            )
+            val scheme = if (targetPort == 80) "http" else "https"
+            var fullSocksUrl = "$scheme://$targetHost/"
 
             if (isBlocked || deviceManager.isDeviceBlocked(clientIp)) {
+                accessLogManager.log(
+                    clientIp = clientIp,
+                    targetHost = fullSocksUrl,
+                    protocol = "SOCKS5",
+                    isBlocked = true,
+                    isPaused = isDevPaused,
+                    ruleMatched = if (isDevPaused) "Device Paused" else ruleMatched,
+                    deviceName = deviceManager.getDeviceDisplayName(clientIp)
+                )
                 clientOut.write(byteArrayOf(0x05, 0x02, 0x00, 0x01, 0, 0, 0, 0, 0, 0))
                 clientOut.flush()
                 clientSocket.close()
@@ -203,6 +205,22 @@ class Socks5ProxyServer(
                 clientOut.write(byteArrayOf(0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0))
                 clientOut.flush()
 
+                val bufferedClientIn = java.io.BufferedInputStream(clientIn, 4096)
+                val extracted = TlsSniExtractor.peekRequestUrl(bufferedClientIn, targetPort)
+                if (extracted != null) {
+                    fullSocksUrl = extracted.fullUrl
+                }
+                LiveConnectionMonitor.recordActiveUrl(clientIp, fullSocksUrl, "SOCKS5")
+                accessLogManager.log(
+                    clientIp = clientIp,
+                    targetHost = fullSocksUrl,
+                    protocol = "SOCKS5",
+                    isBlocked = false,
+                    isPaused = false,
+                    ruleMatched = null,
+                    deviceName = deviceManager.getDeviceDisplayName(clientIp)
+                )
+
                 val targetIn = targetSocket.getInputStream()
                 val targetOut = targetSocket.getOutputStream()
 
@@ -212,13 +230,14 @@ class Socks5ProxyServer(
 
                 val uploadThread = Thread {
                     ThrottledStreams.pipe(
-                        input = clientIn,
+                        input = bufferedClientIn,
                         output = targetOut,
                         deviceThrottler = upThrottler,
                         globalThrottler = globalThrottler,
                         isBlockedProvider = { deviceManager.isDeviceBlocked(clientIp) },
                         onBytesTransferred = { bytes ->
                             deviceManager.recordTraffic(clientIp, downBytes = 0, upBytes = bytes)
+                            LiveConnectionMonitor.recordActiveUrl(clientIp, fullSocksUrl, "SOCKS5")
                         }
                     )
                     try { targetSocket.close() } catch (_: Exception) {}
@@ -233,6 +252,7 @@ class Socks5ProxyServer(
                         isBlockedProvider = { deviceManager.isDeviceBlocked(clientIp) },
                         onBytesTransferred = { bytes ->
                             deviceManager.recordTraffic(clientIp, downBytes = bytes, upBytes = 0)
+                            LiveConnectionMonitor.recordActiveUrl(clientIp, fullSocksUrl, "SOCKS5")
                         }
                     )
                     try { clientSocket.close() } catch (_: Exception) {}
